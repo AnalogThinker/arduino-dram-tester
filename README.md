@@ -1,3 +1,9 @@
+This is a fork from Andre Miller's excellent DRAMARDUINO DRAM Tester for 41256 and 4164 DRAM available here:
+https://github.com/andremiller/arduino-dram-tester
+
+This fork is modified to only test the 16k TRS-80 RAM (8041016A or NTE2117)
+
+
 # arduino-dram-tester
 Test DRAM with Arduino Uno
 
@@ -9,16 +15,26 @@ Test DRAM with Arduino Uno
 
 ## Pinouts:
 
-* DRAM pin -> Arduino UNO pin
-* DIN -> 2
-* DOUT -> 3
-* CAS -> 5
-* RAS -> 6
-* WE -> 7
-* A0 to A5 -> 8 to 13
-* A6 to A9 -> A0 to A3
+* DRAM pin       -> Arduino UNO pin
+* Pin 2  (DIN)   -> A1
+* Pin 14 (DOUT)  -> 8
+* Pin 15 (CAS)   -> 9
+* Pin 4  (RAS)   -> A3
+* Pin 3  (WE)    -> A2
+* Pin 5  (A0)    -> A4
+* Pin 7  (A1)    -> 2
+* Pin 6  (A2)    -> A5
+* Pin 12 (A3)    -> 6
+* Pin 11 (A4)    -> 5
+* Pin 10 (A5)    -> 4
+* Pin 13 (A6)    -> 7
 
-(Also connect DRAM supply pins)
+(Also connect DRAM supply pins, unlike original project, additional voltage rails are required and should be provided using a bench power supply)
+Pin 1 (Vbb) -> -5V
+Pin 8 (Vdd) -> 12V
+Pin 16 (Gnd) -> Gnd
+Pin 9 (Vcc) -> 5V
+
 
 The number of address lines is configurable by setting ADDR_BITS
 
