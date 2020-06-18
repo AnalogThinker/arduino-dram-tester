@@ -1,11 +1,9 @@
-This is a fork from Andre Miller's excellent DRAMARDUINO DRAM Tester for 41256 and 4164 DRAM available here:
-https://github.com/andremiller/arduino-dram-tester
-
+# TRS-80 Arduino RAM Tester
 This fork is modified to only test the 16k TRS-80 RAM (8041016A or NTE2117)
 
-
-# arduino-dram-tester
-Test DRAM with Arduino Uno
+## Forked from
+This is a fork from Andre Miller's excellent DRAMARDUINO DRAM Tester for 41256 and 4164 DRAM available here:
+https://github.com/andremiller/arduino-dram-tester
 
 ## Basic DRAM tester, outputs results to Serial, based on:
 
