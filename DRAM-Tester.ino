@@ -1,249 +1,217 @@
-// -*- C -*-
+#include <SoftwareSerial.h>
 
-/* Simple DRAM tester
- * Andre Miller http://www.andremiller.net/
- * Based on:  http://insentricity.com/a.cl/252  Chris Osborn <fozztexx@fozztexx.com>
- *            https://github.com/FozzTexx/DRAM-Tester
- */
+#define DI          15  // PC1
+#define DO           8  // PB0
+#define CAS          9  // PB1
+#define RAS         17  // PC3
+#define WE          16  // PC2
 
-// Tested on Arduino UNO
+#define XA0         18  // PC4
+#define XA1          2  // PD2
+#define XA2         19  // PC5
+#define XA3          6  // PD6
+#define XA4          5  // PD5
+#define XA5          4  // PD4
+#define XA6          7  // PD7
+//#define XA7          3  // PD3
+//#define XA8         14  // PC0
 
-#define DIN             2
-#define DOUT            3
-#define CAS             5
-#define RAS             6
-#define WE              7
+//#define M_TYPE      10  // PB2
+#define R_LED       11  // PB3
+#define G_LED       12  // PB4
 
-#define ADDR_BITS       9  // 9 for 256, 10 is max address bits
+#define RXD          0  // PD0
+#define TXD          1  // PD1
 
-void fillSame(int val);
-void fillAlternating(int start);
+#define BUS_SIZE     7
 
-void setup()
-{
-  int mask;
-  Serial.begin(115200);
-  Serial.println("SETUP");
-  Serial.print("Number of address bits: ");
-  Serial.println(ADDR_BITS);
+volatile int bus_size;
 
-  
-  pinMode(DIN, OUTPUT);
-  pinMode(DOUT, INPUT);
+//SoftwareSerial USB(RXD, TXD);
 
-  pinMode(CAS, OUTPUT);
-  pinMode(RAS, OUTPUT);
-  pinMode(WE, OUTPUT);
+const unsigned int a_bus[BUS_SIZE] = {
+  XA0, XA1, XA2, XA3, XA4, XA5, XA6
+};
 
-  /* 10 is max address bits, even if chip is smaller */
-  mask = (1 << 10) - 1; 
-  DDRB = mask & 0x3f;
-  mask >>= 6;
-  DDRC = mask & 0x0f;
-  
-  digitalWrite(CAS, HIGH);
-  digitalWrite(RAS, HIGH);
-  digitalWrite(WE, HIGH);
+void setBus(unsigned int a) {
+  int i;
+  for (i = 0; i < BUS_SIZE; i++) {
+    digitalWrite(a_bus[i], a % 1);
+    a /= 2;
+  }
 }
 
-void loop()
-{
-  static int i=1;
-  Serial.print("START ITERATION: ");
-  Serial.println(i);
-
-  fillAlternating(1);
-  fillAlternating(0);
-  fillSame(0);
-  fillSame(1);
-  fillRandom(10);
-  fillRandom(200);
-
-  Serial.print("END ITERATION: ");
-  Serial.println(i);
-  i+=1;
-  
-}
-
-static inline int setAddress(int row, int col, int wrt)
-{
-  int val = 0;
-
-
-  PORTB = row & 0x3f;
-  PORTC = (PORTC & 0xf0) | (row >> 6) & 0x0f;
+void writeAddress(unsigned int r, unsigned int c, int v) {
+  /* row */
+  setBus(r);
   digitalWrite(RAS, LOW);
 
-  if (wrt)
-    digitalWrite(WE, LOW);
+  /* rw */
+  digitalWrite(WE, LOW);
 
-  PORTB = col & 0x3f;
-  PORTC = (PORTC & 0xf0) | (col >> 6) & 0x0f;
+  /* val */
+  digitalWrite(DI, (v & 1)? HIGH : LOW);
+
+  /* col */
+  setBus(c);
   digitalWrite(CAS, LOW);
 
-  if (wrt)
-    digitalWrite(WE, HIGH);
-  else
-    val = digitalRead(DOUT);
- 
+  digitalWrite(WE, HIGH);
+  digitalWrite(CAS, HIGH);
+  digitalWrite(RAS, HIGH);
+}
+
+int readAddress(unsigned int r, unsigned int c) {
+  int ret = 0;
+
+  /* row */
+  setBus(r);
+  digitalWrite(RAS, LOW);
+
+  /* col */
+  setBus(c);
+  digitalWrite(CAS, LOW);
+
+  /* get current value */
+  ret = digitalRead(DO);
+
   digitalWrite(CAS, HIGH);
   digitalWrite(RAS, HIGH);
 
-  return val;
+  return ret;
 }
 
-void fail(int row, int col, int val)
+void error(int r, int c)
 {
-
-  Serial.print("*** FAIL row ");
-  Serial.print(row);
-  Serial.print(" col ");
-  Serial.print(col);
-  Serial.print(" was expecting ");
-  Serial.print(val);
-  Serial.print(" got ");
-  Serial.println(!val);
-
+  unsigned long a = ((unsigned long)c << bus_size) + r;
+  digitalWrite(R_LED, LOW);
+  digitalWrite(G_LED, HIGH);
+  interrupts();
+  Serial.print(" FAILED $");
+  Serial.println(a, HEX);
+  Serial.flush();
   while (1)
     ;
 }
 
-void fillSame(int val)
+void ok(void)
 {
-  int row, col;
-
-  unsigned long writeStartMillis;
-  unsigned long writeEndMillis;
-  unsigned long readStartMillis;
-  unsigned long readEndMillis;
-
-  Serial.print("  Setting all bits set to: ");
-  Serial.println(val);
-  digitalWrite(DIN, val);
-
-  Serial.println("    Write");
-  writeStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++)
-    for (row = 0; row < (1 << ADDR_BITS); row++)
-      setAddress(row, col, 1);
-  writeEndMillis = millis();
-
-  /* Reverse DIN in case DOUT is floating */
-  digitalWrite(DIN, !val);
-
-  
-  Serial.println("    Read");
-  readStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++)
-    for (row = 0; row < (1 << ADDR_BITS); row++)
-      if (setAddress(row, col, 0) != val)
-        fail(row, col, val);
-  readEndMillis = millis();
-
-  Serial.print("    Pass ");
-  Serial.print("Write: ");
-  Serial.print(writeEndMillis - writeStartMillis);
-  Serial.print("ms Read: ");
-  Serial.print(readEndMillis - readStartMillis);
-  Serial.println("ms");
-  return;
+  digitalWrite(R_LED, HIGH);
+  digitalWrite(G_LED, LOW);
+  interrupts();
+  Serial.println(" OK!");
+  Serial.flush();
+  while (1)
+    ;
 }
 
-void fillAlternating(int start)
+void blink(void)
 {
-  int row, col, i;
-
-  unsigned long writeStartMillis;
-  unsigned long writeEndMillis;
-  unsigned long readStartMillis;
-  unsigned long readEndMillis;
-
-  Serial.print("  Alternating bits starting with: ");
-  Serial.println(start);
-
-  Serial.println("    Write");
-  i = start;
-  writeStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++) {
-    for (row = 0; row < (1 << ADDR_BITS); row++) {
-      digitalWrite(DIN, i);
-      i = !i;
-      setAddress(row, col, 1);
-    }
-  }
-  writeEndMillis = millis();
-
-  Serial.println("    Read");
-  readStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++) {
-    for (row = 0; row < (1 << ADDR_BITS); row++) { 
-      if (setAddress(row, col, 0) != i)
-        fail(row, col, i);
-
-      i = !i;
-    }
-  }
-  readEndMillis = millis();
-  
-  Serial.print("    Pass ");
-  Serial.print("Write: ");
-  Serial.print(writeEndMillis - writeStartMillis);
-  Serial.print("ms Read: ");
-  Serial.print(readEndMillis - readStartMillis);
-  Serial.println("ms");
-  return;
+  digitalWrite(G_LED, LOW);
+  digitalWrite(R_LED, LOW);
+  delay(1000);
+  digitalWrite(R_LED, HIGH);
+  digitalWrite(G_LED, HIGH);
 }
 
-void fillRandom(int seed)
-{
-  int row, col, i;
-
-  unsigned long writeStartMillis;
-  unsigned long writeEndMillis;
-  unsigned long readStartMillis;
-  unsigned long readEndMillis;
-
-  randomSeed(seed);
-
-  Serial.print("  Random bit values with seed: ");
-  Serial.println(seed);
-
-  Serial.println("    Write");
-  writeStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++) {
-    for (row = 0; row < (1 << ADDR_BITS); row++) {
-      i = random(0,2);
-      //i = 1;
-      //Serial.println(i);
-      digitalWrite(DIN, i);
-      setAddress(row, col, 1);
-    }
-  }
-  writeEndMillis = millis();
-
-  randomSeed(seed);
-
-  Serial.println("    Read");
-  readStartMillis = millis();
-  for (col = 0; col < (1 << ADDR_BITS); col++) {
-    for (row = 0; row < (1 << ADDR_BITS); row++) { 
-      i = random(0,2);
-      //i=1;
-      //Serial.println(i);
-      if (setAddress(row, col, 0) != i)
-        fail(row, col, i);
-    }
-  }
-  readEndMillis = millis();
-  
-  Serial.print("    Pass ");
-  Serial.print("Write: ");
-  Serial.print(writeEndMillis - writeStartMillis);
-  Serial.print("ms Read: ");
-  Serial.print(readEndMillis - readStartMillis);
-  Serial.println("ms");
-  return;
+void green(int v) {
+  digitalWrite(G_LED, v);
 }
 
+void fill(int v) {
+  int r, c, g = 0;
+  v %= 1;
+  for (c = 0; c < (1<<bus_size); c++) {
+    green(g? HIGH : LOW);
+    for (r = 0; r < (1<<bus_size); r++) {
+      writeAddress(r, c, v);
+      if (v != readAddress(r, c))
+        error(r, c);
+    }
+    g ^= 1;
+  }
+  blink();
+}
 
+void fillx(int v) {
+  int r, c, g = 0;
+  v %= 1;
+  for (c = 0; c < (1<<bus_size); c++) {
+    green(g? HIGH : LOW);
+    for (r = 0; r < (1<<bus_size); r++) {
+      writeAddress(r, c, v);
+      if (v != readAddress(r, c))
+        error(r, c);
+      v ^= 1;
+    }
+    g ^= 1;
+  }
+  blink();
+}
+
+void setup() {
+  int i;
+
+  Serial.begin(9600);
+  while (!Serial)
+    ; /* wait */
+
+  Serial.println();
+  Serial.print("DRAM TESTER ");
+
+  for (i = 0; i < BUS_SIZE; i++)
+    pinMode(a_bus[i], OUTPUT);
+
+  pinMode(CAS, OUTPUT);
+  pinMode(RAS, OUTPUT);
+  pinMode(WE, OUTPUT);
+  pinMode(DI, OUTPUT);
+
+  pinMode(R_LED, OUTPUT);
+  pinMode(G_LED, OUTPUT);
+
+  //pinMode(M_TYPE, INPUT);
+  pinMode(DO, INPUT);
+
+  digitalWrite(WE, HIGH);
+  digitalWrite(RAS, HIGH);
+  digitalWrite(CAS, HIGH);
+
+  digitalWrite(R_LED, HIGH);
+  digitalWrite(G_LED, HIGH);
+
+/*
+  if (digitalRead(M_TYPE)) {
+    //jumper not set - 41256
+    bus_size = BUS_SIZE;
+    Serial.print("256Kx1 ");
+  } else {
+    // jumper set - 4164
+    bus_size = BUS_SIZE - 1;
+    Serial.print("64Kx1 ");
+  }
+*/
+   // Default 16k (8041016A or NTE2117)
+   bus_size = BUS_SIZE;
+  Serial.flush();
+
+  digitalWrite(R_LED, LOW);
+  digitalWrite(G_LED, LOW);
+
+  noInterrupts();
+  for (i = 0; i < (1 << BUS_SIZE); i++) {
+    digitalWrite(RAS, LOW);
+    digitalWrite(RAS, HIGH);
+  }
+  digitalWrite(R_LED, HIGH);
+  digitalWrite(G_LED, HIGH);
+}
+
+void loop() {
+  interrupts(); Serial.print("."); Serial.flush(); noInterrupts(); fillx(0);
+  interrupts(); Serial.print("."); Serial.flush(); noInterrupts(); fillx(1);
+  interrupts(); Serial.print("."); Serial.flush(); noInterrupts(); fill(0);
+  interrupts(); Serial.print("."); Serial.flush(); noInterrupts(); fill(1);
+  ok();
+}
 
